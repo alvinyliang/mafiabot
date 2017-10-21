@@ -11,13 +11,14 @@ or in the "license" file accompanying this file. This file is distributed on an 
 import sys
 import irc.bot
 import requests
+import random
 
 class TwitchBot(irc.bot.SingleServerIRCBot):
     total_players = 3
     game_exists = False
     game_is_full = False
     player_count = 0
-    players = []
+    players = ['Alice', 'Bob', 'Charlie', 'David', 'Edgar', 'Frank', 'Gina', 'Harold']
 
 
     def __init__(self, username, client_id, token, channel):
@@ -95,7 +96,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         if not self.game_exists:
             self.player_count = 1
             self.game_exists = True
-            self.players.append(r['display_name'])
+            #self.players.append(r['display_name'])
 
             message = "Game created, waiting for enough players to join."
             c.privmsg(self.channel, message)
@@ -105,7 +106,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             c.privmsg(self.channel, message)
         else:
             self.player_count += 1
-            self.players.append(r['display_name'])
+            #self.players.append(r['display_name'])
 
             message = r['display_name'] + ' has been added to the game. '
             c.privmsg(self.channel, message)
@@ -114,6 +115,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                 message = "There are enough players now, game starting!"
                 c.privmsg(self.channel, message)
                 self.start_gameplay(c)
+
 
     class Player(object):
         role = 0
@@ -128,24 +130,41 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             return 'a villager'
 
     def start_gameplay(self, c):
-        villagers = 6
-        mafia = 2
-        # set up roles for all players in players array
-        # give list of players playing
-        # ? create player dictionary
+        nums = [x for x in range(8)]
+        random.shuffle(nums)
+        villagers = []
+        mafia = []
+
+        for num in nums:
+            player = self.Player(self.players[num])
+            if num == 0 or num == 1:
+                mafia.append(player)
+            else:
+                villagers.append(player)
+
+        print(len(mafia))
+        print(len(villagers))
+        message = 'The players playing: {}'.format(', '.join(self.players))
+        c.privmsg(self.channel, message)
 
         day = 0
         suspect, victim = None, None
 
-        while mafia_bool and (villagers - mafia) > mafia:
+        '''while False and (len(villagers) - len(mafia)) > len(mafia):
             message = 'Day {} begins.'.format(day)
             c.privmsg(self.channel, message)
 
-        # random turn order each day
-        if day == 0:
-            
+            # random turn order each day
 
+            if day == 0:
+                for v in villagers:
+                    # send message via whisper. "Today is Day 0. No voting will occur today. Beware of the mafia tonight"
 
+                for m in mafia:
+                    # send message via whisper. "You are part of the mafia. Your ally is: " get other mafia
+            else:
+                message = 'Today is Day {}.'.format(day) + 'Last night, {} was killed.'.format(victim) +
+                          'These players are still alive: {}'.format(', '.join(p.name for p in players))'''
 
 
 def main():
