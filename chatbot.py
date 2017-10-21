@@ -34,7 +34,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         self.votes = {}
 
         self.players = {}
-        self.total_players = 1
+        self.total_players = 2
 
         # Get the channel id, we will need this for v5 API calls
         url = 'https://api.twitch.tv/kraken/users?login=' + channel
@@ -132,7 +132,6 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             message = "Game created by " + sender + ", waiting for enough players to join. (" + str(self.player_count) + "/" + str(self.total_players) + ")"
             
             c.privmsg(self.channel, message)
-            self.start_gameplay(c, e)
 
 
         elif self.game_is_full:
@@ -213,8 +212,10 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
             if day > 0:
                 if self.victim:
-                    del self.players[self.victim]
-
+                    try:
+                        del self.players[self.victim]
+                    except:
+                        pass
                 message = 'Today is Day {}. '.format(day) + 'Last night, {} was killed. '.format(self.victim) \
                           + 'These players are still alive: {} . '.format(', '.join(self.players.keys())) \
                         + 'Discuss and vote on who to kill.'
@@ -256,9 +257,11 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             # NIGHT ACTION
             # Mafia decides on a victim
             mafia = []
-            mafia.append(self.players.get(0))
-            mafia.append(self.players.get(1))
 
+            for key, value in self.players.iteritems():
+                if value == 0 or value == 1:
+                    mafia.append(key)
+            
             for key in self.players.keys():
                 nums = [x for x in range(len(self.players.keys()))]
                 random.shuffle(nums)
