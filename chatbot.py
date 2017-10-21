@@ -23,10 +23,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
     wait_queue = Queue.Queue()
     random_tokens = {}
     victim = None
-<<<<<<< HEAD
-=======
-    votes = {}
->>>>>>> 6531f04b37fca1b49850e5c68455436e82da31aa
+
     num_votes = 0
 
 
@@ -89,23 +86,17 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         elif cmd == "status":
             sender = e.source.split("!")[0]
             c.privmsg(self.channel, "/w " + sender + str(self.players.keys()))
-<<<<<<< HEAD
 
 
         elif cmd == "action":
             number = e.arguments[0].split(" ")[1]
             self.victim = random_tokens[sender][number]
 
-=======
-        elif cmd == "action":
-            number = e.arguments[0].split(" ")[1]
-            victim = random_tokens[sender][number]
->>>>>>> 6531f04b37fca1b49850e5c68455436e82da31aa
+
         elif cmd == "vote":
             num_votes += 1
             voted = e.arguments[0].split(" ")[1]
             votes[voted] += 1
-<<<<<<< HEAD
 
             sender = e.source.split("!")[0]
             
@@ -115,11 +106,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
 
 
-=======
-            sender = e.source.split("!")[0]
-            message = '{} has voted to kill {}'.format(sender, voted)
-            c.primsg(self.channel, message)
->>>>>>> 6531f04b37fca1b49850e5c68455436e82da31aa
+
         else:
             c.privmsg(self.channel, "Did not understand command: " + cmd)
 
@@ -227,13 +214,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             if day > 0:
                 if self.victim:
                     del self.players[self.victim]
-<<<<<<< HEAD
 
-
-=======
-
-
->>>>>>> 6531f04b37fca1b49850e5c68455436e82da31aa
                 message = 'Today is Day {}. '.format(day) + 'Last night, {} was killed. '.format(self.victim) \
                           + 'These players are still alive: {} . '.format(', '.join(self.players.keys())) \
                         + 'Discuss and vote on who to kill.'
