@@ -14,6 +14,7 @@ import requests
 import random
 import Queue
 import time
+import json
 
 class TwitchBot(irc.bot.SingleServerIRCBot):
     game_exists = False
@@ -22,7 +23,9 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
     player_count = 0
     wait_queue = Queue.Queue()
     random_tokens = {}
+
     victim = None
+    mafia_bool = False
 
     num_votes = 0
 
@@ -32,6 +35,10 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         self.token = token
         self.channel = '#' + channel
         self.votes = {}
+        self.random_victims = {}
+        self.day = 0
+        self.villagers_count = 6
+        self.mafia_count = 2
 
         self.players = {}
         self.total_players = 2
@@ -82,30 +89,48 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             r = requests.get(url, headers=headers).json()
 
             self.start_mafia(c, e)
+            self.run_day(c)
 
         elif cmd == "status":
             sender = e.source.split("!")[0]
             c.privmsg(self.channel, "/w " + sender + str(self.players.keys()))
 
-
         elif cmd == "action":
+            self.mafia_bool = True
+            print 'entered action'
+            sender = e.source.split("!")[0]
             number = e.arguments[0].split(" ")[1]
-            self.victim = random_tokens[sender][number]
-
+            sender = str(sender)
+            with open('data.json', 'r') as fp:
+                self.random_victims = json.load(fp)
+            print self.random_victims
+            #self.victim = self.random_victims[sender][number]
+            #print victim
+            self.num_votes = 0
+            self.run_day(c)
+            bool_end = self.check_state(c)
+            if bool_end:
+                self.prepare_next_game(c)
 
         elif cmd == "vote":
-            num_votes += 1
+            self.num_votes += 1
             voted = e.arguments[0].split(" ")[1]
-            votes[voted] += 1
+            if int(voted) not in self.votes:
+                self.votes[int(voted)] = 1
+            else:
+                self.votes[int(voted)] += 1
 
             sender = e.source.split("!")[0]
             
-            message = '{} has voted to kill {}'.format(sender, voted)
+            message = '{} has voted to kill {}'.format(sender, self.random_victims[sender][voted])
             
-            c.primsg(self.channel, message)
+            c.privmsg(self.channel, message)
 
-
-
+            self.run_internal(c)
+            self.run_night(c)
+            bool_end = self.check_state(c)
+            if bool_end:
+                self.prepare_next_game(c)
 
         else:
             c.privmsg(self.channel, "Did not understand command: " + cmd)
@@ -178,8 +203,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         nums = [x for x in range(8)]
         random.shuffle(nums)
 
-        villagers_count = 6
-        mafia_count = 2
+
 
 
         sender = e.source.split("!")[0]
@@ -203,94 +227,107 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                 c.privmsg(self.channel, message)
             i += 1
 
-        day = 0
 
-        while mafia_count > 0 and (villagers_count - mafia_count) > mafia_count:
-            message = 'Day {} begins.'.format(day)
-            c.privmsg(self.channel, message)
-
-
-            if day > 0:
-                if self.victim:
-                    try:
-                        del self.players[self.victim]
-                    except:
-                        pass
-                message = 'Today is Day {}. '.format(day) + 'Last night, {} was killed. '.format(self.victim) \
-                          + 'These players are still alive: {} . '.format(', '.join(self.players.keys())) \
-                        + 'Discuss and vote on who to kill.'
-                c.privmsg(self.channel, message)
-
-                # Don't go to night if a win condition's been met.
-                if mafia_count == 0 and (villagers_count - mafia_count) == mafia_count:
-                    break
-
-                while self.num_votes != len(self.players.keys()):
-                    time.sleep(1)
-
-                max = 0
-                killed = None
-                for vote in self.votes.keys():
-                    if self.votes[vote] > max:
-                        max = self.votes[vote]
-                        killed = vote
-
-                # The most voted player is killed, ties broken randomly
-                if killed is not None:
-                    role = 'villager'
-                    if self.players[killed] == 0 or self.players[killed] == 1:
-                        role = 'mafia'
-                    message = 'The town has killed {}'.format(killed) + 'They were {}.'.format(role)
-                    c.privmsg(self.channel, message)
-                    try:
-                        del self.players[killed]
-                    except:
-                        pass
-                else:
-                    message = 'The town did not kill anyone today.'
-                    c.privmsg(self.channel, message)
-
-            # Don't go to night if a win condition's been met.
-            if mafia_count == 0 and (villagers_count - mafia_count) == mafia_count:
-                break
-
-            # NIGHT ACTION
-            # Mafia decides on a victim
-            mafia = []
-
-            for key, value in self.players.iteritems():
-                if value == 0 or value == 1:
-                    mafia.append(key)
-            
-            for key in self.players.keys():
-                nums = [x for x in range(len(self.players.keys()))]
-                random.shuffle(nums)
-                self.random_tokens[key] = nums
-
-            for m in mafia:
-                if m != None:
-                    message = 'Use integer to decide who to kill. '
-                    i = 0
-                    for key in self.players.keys():
-                        if key == m:
-                            continue
-                        self.random_tokens[m][i] = key
-                        message = message + key + ':' + str(self.random_tokens[m][i]) + ' '
-                        i += 1
-
-                    c.privmsg(self.channel, "/w " + m + " " + message)
-
-            day += 1
-            self.num_votes = 0
-
-        if mafia_count > 0:
+    def check_state(self, c):
+        mafia_wins = self.check_mafia_wins()
+        villagers_win = self.check_villagers_win()
+        if not mafia_wins and not villagers_win:
+            return False
+        if mafia_wins:
             message = 'MAFIA VICTORY'
-
-        else:
+        elif villagers_win:
             message = 'VILLAGE VICTORY'
 
         c.privmsg(self.channel, message)
-        self.prepare_next_game(c)
+
+        return True
+
+
+    def check_mafia_wins(self):
+        if (self.villagers_count - self.mafia_count) == self.mafia_count:
+            return True
+        return False
+
+    def check_villagers_win(self):
+        if self.mafia_count == 0:
+            return True
+        return False
+
+    def run_day(self, c):
+        #message = 'Day {} begins.'.format(day)
+        #c.privmsg(self.channel, message)
+
+        if self.day > 0:
+            if self.victim:
+                try:
+                    del self.players[self.victim]
+                except:
+                    pass
+            message = 'Today is Day {}. '.format(self.day) + 'Last night, {} was killed. '.format(self.victim) \
+                      + 'These players are still alive: {} . '.format(', '.join(self.players.keys())) \
+                      + 'Discuss and vote on who to kill.'
+            c.privmsg(self.channel, message)
+        self.day += 1
+
+    def run_internal(self, c):
+        max = 0
+        killed = None
+        for vote in self.votes.keys():
+            if self.votes[vote] > max:
+                max = self.votes[vote]
+                killed = vote
+
+        # The most voted player is killed, ties broken randomly
+        if killed is not None:
+            role = 'villager'
+            if self.players[killed] == 0 or self.players[killed] == 1:
+                role = 'mafia'
+            message = 'The town has killed {}'.format(killed) + 'They were {}.'.format(role)
+            c.privmsg(self.channel, message)
+            try:
+                del self.players[killed]
+                if players[killed] < 2:
+                    self.mafia_count -= 1
+                else:
+                    self.villagers_count -= 1
+            except:
+                pass
+        else:
+            message = 'The town did not kill anyone today.'
+            c.privmsg(self.channel, message)
+
+    def run_night(self, c):
+        # NIGHT ACTION
+        # Mafia decides on a victim
+        mafia = []
+
+        for key, value in self.players.iteritems():
+            if value == 0 or value == 1:
+                mafia.append(key)
+
+        for key in self.players.keys():
+            nums = [x for x in range(len(self.players.keys()))]
+            random.shuffle(nums)
+            self.random_tokens[key] = nums
+
+        for m in mafia:
+            if m != None:
+                print 'entered'
+                message = 'Use integer to decide who to kill. '
+                i = 0
+                for key in self.players.keys():
+                    if key == m:
+                        continue
+                    rand_index = self.random_tokens[m][i]
+                    message = message + key + ':' + str(rand_index) + ' '
+                    idx = str(m)
+                    self.random_victims[idx] = {rand_index: key}
+                    i += 1
+                with open('data.json', 'w') as fp:
+                    json.dump(self.random_victims, fp)
+                print message
+
+                c.privmsg(self.channel, "/w " + m + " " + message)
 
     def prepare_next_game(self, c):
         if wait_queue.empty():
