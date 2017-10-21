@@ -13,6 +13,7 @@ import irc.bot
 import requests
 import random
 import Queue
+import time
 
 class TwitchBot(irc.bot.SingleServerIRCBot):
     game_exists = False
@@ -20,12 +21,16 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
     game_started = False
     player_count = 0
     wait_queue = Queue.Queue()
+    random_tokens = {}
+    victim = None
+    num_votes = 0
 
 
     def __init__(self, username, client_id, token, channel):
         self.client_id = client_id
         self.token = token
         self.channel = '#' + channel
+        self.votes = {}
 
         self.players = {}
         self.total_players = 2
@@ -76,13 +81,29 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             r = requests.get(url, headers=headers).json()
 
             self.start_mafia(c, e)
-        elif cmd == "vote":
-            url = 'https://api.twitch.tv/kraken/channels/' + self.channel_id
-            headers = {'Client-ID': self.client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
-            r = requests.get(url, headers=headers).json() 
+
         elif cmd == "status":
             sender = e.source.split("!")[0]
             c.privmsg(self.channel, "/w " + sender + str(self.players.keys()))
+
+
+        elif cmd == "action":
+            number = e.arguments[0].split(" ")[1]
+            self.victim = random_tokens[sender][number]
+
+        elif cmd == "vote":
+            num_votes += 1
+            voted = e.arguments[0].split(" ")[1]
+            votes[voted] += 1
+
+            sender = e.source.split("!")[0]
+            
+            message = '{} has voted to kill {}'.format(sender, voted)
+            
+            c.primsg(self.channel, message)
+
+
+
         else:
             c.privmsg(self.channel, "Did not understand command: " + cmd)
 
@@ -104,8 +125,6 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             self.players[sender] = 1
             self.player_count = 1
             self.game_exists = True
-            
-            # TODO: get user. self.players.append(username)
 
             message = "Game created by " + sender + ", waiting for enough players to join. (" + str(self.player_count) + "/" + str(self.total_players) + ")"
             
@@ -113,7 +132,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
 
         elif self.game_is_full:
-            # TODO: get user. self.wait_queue.put(username)
+            self.wait.queue.put(sender)
             message = "Current game is full. You are in the waiting queue for the next game."
             c.privmsg(self.channel, message)
         else:
@@ -123,12 +142,9 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                 self.player_count += 1
                 self.players[sender] = 1
 
-                # TODO: get user. self.players.append(username)
                 message = sender + ' has been added to the game. (' + str(self.player_count) + "/" + str(self.total_players) + ")"
 
-                # TODO: get user. message = username + ' has been added to the game lobby. '
                 c.privmsg(self.channel, message)
-
                 
                 if self.player_count == self.total_players:
                     self.game_is_full = True
@@ -140,7 +156,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                 c.privmsg(self.channel, "Cannot add to game, already in game")
 
 
-    class Player(object):
+    '''class Player(object):
         role = 0
         messages = ''
         tokens = []
@@ -185,53 +201,47 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             i += 1
 
         day = 0
-        victim = None
-        
+
         while mafia_count > 0 and (villagers_count - mafia_count) > mafia_count:
             message = 'Day {} begins.'.format(day)
             c.privmsg(self.channel, message)
 
 
             if day > 0:
+                if self.victim:
+                    del self.players[self.victim]
 
-                del self.players[victim]
 
-
-                message = 'Today is Day {}.'.format(day) + 'Last night, {} was killed.'.format(victim) \
-                          + 'These players are still alive: {}'.format(', '.join(self.players.keys()))
+                message = 'Today is Day {}. '.format(day) + 'Last night, {} was killed. '.format(self.victim) \
+                          + 'These players are still alive: {} . '.format(', '.join(self.players.keys())) \
+                        + 'Discuss and vote on who to kill.'
                 c.privmsg(self.channel, message)
 
                 # Don't go to night if a win condition's been met.
                 if mafia_count == 0 and (villagers_count - mafia_count) == mafia_count:
                     break
 
-                # START TODO
-                num_votes = 0
-                votes = []
-                if cmd == "vote" and day != 0:
-                    num_votes += 1
-                    #votes[p.name] += 1
-                    #message = '{} has voted to kill {}'.format(p.name, )
-                    # TO-DO: need to get user name and who to kill
-                    c.privmsg(self.channel, message)
-
-                elif cmd == "abstain" and day != 0:
-                    num_votes += 1
-                    # message = '{} has voted to kill no one'.format(p.name)
-                    # TO-DO: need to get user name
-                    c.privmsg(self.channel, message)
+                while self.num_votes != len(self.players.keys()):
+                    time.sleep(1)
 
                 max = 0
                 killed = None
-                for vote in votes:
-                    if votes[vote] > max:
-                        max = votes[vote]
+                for vote in self.votes.keys():
+                    if self.votes[vote] > max:
+                        max = self.votes[vote]
                         killed = vote
 
                 # The most voted player is killed, ties broken randomly
                 if killed is not None:
-                    message = 'The town has killed {}'.format(p.name) + 'They were {}.'.format(killed.get_role())
+                    role = 'villager'
+                    if self.players[killed] == 0 or self.players[killed] == 1:
+                        role = 'mafia'
+                    message = 'The town has killed {}'.format(killed) + 'They were {}.'.format(role)
                     c.privmsg(self.channel, message)
+                    try:
+                        del self.players[killed]
+                    except:
+                        pass
                 else:
                     message = 'The town did not kill anyone today.'
                     c.privmsg(self.channel, message)
@@ -246,25 +256,26 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             mafia.append(self.players.get(0))
             mafia.append(self.players.get(1))
 
+            for key in self.players.keys():
+                nums = [x for x in range(len(self.players.keys()))]
+                random.shuffle(nums)
+                self.random_tokens[key] = nums
 
             for m in mafia:
-                for key, value in self.players.iteritems(){
-                    self.players[key] = (value, i)
-                    if m != None:
-                        c.privmsg(self.channel, "/w " + m + " " + str(name,  + " is the target")
-                    }
-                # whisper who to kill, save it
+                if m != None:
+                    message = 'Use integer to decide who to kill. '
+                    i = 0
+                    for key in self.players.keys():
+                        if key == m:
+                            continue
+                        self.random_tokens[m][i] = key
+                        message = message + key + ':' + str(self.random_tokens[m][i]) + ' '
+                        i += 1
 
-            #message = 'The mafia decides to kill {}'.format(p.name)
-            # END TODO
-            #c.privmsg(self.channel, message)
-
-
+                    c.privmsg(self.channel, "/w " + m + " " + message)
 
             day += 1
-
-
-
+            self.num_votes = 0
 
         if mafia_count > 0:
             message = 'MAFIA VICTORY'
@@ -272,10 +283,8 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         else:
             message = 'VILLAGE VICTORY'
 
-
-        #c.privmsg(self.channel, message)
-       # self.prepare_next_game(c)
-        """
+        c.privmsg(self.channel, message)
+        self.prepare_next_game(c)
 
     def prepare_next_game(self, c):
         if wait_queue.empty():
@@ -304,7 +313,6 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             else:
                 message = "Game created, waiting for enough players to join."
                 c.privmsg(self.channel, message)
-        """
 
 def main():
     if len(sys.argv) != 5:
