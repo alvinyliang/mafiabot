@@ -15,6 +15,7 @@ import random
 import Queue
 import time
 import json
+import os
 
 class TwitchBot(irc.bot.SingleServerIRCBot):
     game_exists = False
@@ -24,7 +25,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
     wait_queue = Queue.Queue()
     random_tokens = {}
 
-    victim = None
+
     mafia_bool = False
 
     num_votes = 0
@@ -36,11 +37,12 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         self.channel = '#' + channel
         self.votes = {}
         self.random_victims = {}
-        self.day = 0
-        self.villagers_count = 6
-        self.mafia_count = 2
+        self.day = 1
+        self.villagers_count = 1
+        self.mafia_count = 1
+        self.victim = None
 
-        self.players = {}
+        self.players = {'Bob': 4}
         self.total_players = 2
 
         # Get the channel id, we will need this for v5 API calls
@@ -89,7 +91,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             r = requests.get(url, headers=headers).json()
 
             self.start_mafia(c, e)
-            self.run_day(c)
+            self.run_night(c)
 
         elif cmd == "status":
             sender = e.source.split("!")[0]
@@ -103,9 +105,11 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             sender = str(sender)
             with open('data.json', 'r') as fp:
                 self.random_victims = json.load(fp)
+            fp.close()
             print self.random_victims
-            #self.victim = self.random_victims[sender][number]
-            #print victim
+
+            self.victim = self.random_victims[sender][number]
+
             self.num_votes = 0
             self.run_day(c)
             bool_end = self.check_state(c)
@@ -115,14 +119,14 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         elif cmd == "vote":
             self.num_votes += 1
             voted = e.arguments[0].split(" ")[1]
-            if int(voted) not in self.votes:
-                self.votes[int(voted)] = 1
+            if voted not in self.votes:
+                self.votes[voted] = 1
             else:
-                self.votes[int(voted)] += 1
+                self.votes[voted] += 1
 
             sender = e.source.split("!")[0]
             
-            message = '{} has voted to kill {}'.format(sender, self.random_victims[sender][voted])
+            message = '{} has voted to kill {}'.format(sender, voted)
             
             c.privmsg(self.channel, message)
 
@@ -229,22 +233,28 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
 
     def check_state(self, c):
+        print 'entered check_state'
+        print self.villagers_count
+        print self.mafia_count
         mafia_wins = self.check_mafia_wins()
         villagers_win = self.check_villagers_win()
+        print mafia_wins
+        print villagers_win
         if not mafia_wins and not villagers_win:
             return False
         if mafia_wins:
             message = 'MAFIA VICTORY'
+            c.privmsg(self.channel, message)
         elif villagers_win:
             message = 'VILLAGE VICTORY'
-
-        c.privmsg(self.channel, message)
+            c.privmsg(self.channel, message)
 
         return True
 
 
     def check_mafia_wins(self):
-        if (self.villagers_count - self.mafia_count) == self.mafia_count:
+        if self.villagers_count == 0:
+        #if (self.villagers_count - self.mafia_count) <= self.mafia_count:
             return True
         return False
 
@@ -254,20 +264,20 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         return False
 
     def run_day(self, c):
-        #message = 'Day {} begins.'.format(day)
-        #c.privmsg(self.channel, message)
-
         if self.day > 0:
-            if self.victim:
-                try:
-                    del self.players[self.victim]
-                except:
-                    pass
             message = 'Today is Day {}. '.format(self.day) + 'Last night, {} was killed. '.format(self.victim) \
                       + 'These players are still alive: {} . '.format(', '.join(self.players.keys())) \
                       + 'Discuss and vote on who to kill.'
             c.privmsg(self.channel, message)
-        self.day += 1
+            self.day += 1
+            if self.players[str(self.victim)] < 2:
+                self.mafia_count -= 1
+            else:
+                self.villagers_count -= 1
+            try:
+                del self.players[self.victim]
+            except:
+                pass
 
     def run_internal(self, c):
         max = 0
@@ -282,14 +292,14 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             role = 'villager'
             if self.players[killed] == 0 or self.players[killed] == 1:
                 role = 'mafia'
-            message = 'The town has killed {}'.format(killed) + 'They were {}.'.format(role)
+            message = 'The town has killed {}'.format(killed) + ' They were {}.'.format(role)
             c.privmsg(self.channel, message)
+            if self.players[killed] < 2:
+                self.mafia_count -= 1
+            else:
+                self.villagers_count -= 1
             try:
                 del self.players[killed]
-                if players[killed] < 2:
-                    self.mafia_count -= 1
-                else:
-                    self.villagers_count -= 1
             except:
                 pass
         else:
@@ -323,8 +333,10 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                     idx = str(m)
                     self.random_victims[idx] = {rand_index: key}
                     i += 1
+                os.remove('data.json')
                 with open('data.json', 'w') as fp:
                     json.dump(self.random_victims, fp)
+                fp.close()
                 print message
 
                 c.privmsg(self.channel, "/w " + m + " " + message)
