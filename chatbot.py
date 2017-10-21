@@ -17,6 +17,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
     total_players = 3
     game_exists = False
     game_is_full = False
+    game_started = False
     player_count = 0
     players = ['Alice', 'Bob', 'Charlie', 'David', 'Edgar', 'Frank', 'Gina', 'Harold']
 
@@ -112,9 +113,10 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             c.privmsg(self.channel, message)
             if self.player_count == self.total_players:
                 self.game_is_full = True
+                self.game_started = True
                 message = "There are enough players now, game starting!"
                 c.privmsg(self.channel, message)
-                self.start_gameplay(c)
+                self.start_gameplay(c, r)
 
 
     class Player(object):
@@ -125,11 +127,11 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             self.name = name
 
         def get_role(self):
-            if self.role == 1:
+            if self.role == 0 or self.role == 1:
                 return 'a mafioso'
             return 'a villager'
 
-    def start_gameplay(self, c):
+    def start_gameplay(self, c, r):
         nums = [x for x in range(8)]
         random.shuffle(nums)
         villagers = []
@@ -139,22 +141,23 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             player = self.Player(self.players[num])
             if num == 0 or num == 1:
                 mafia.append(player)
+                player.role = num
             else:
                 villagers.append(player)
+                player.role = num
 
-        print(len(mafia))
-        print(len(villagers))
         message = 'The players playing: {}'.format(', '.join(self.players))
         c.privmsg(self.channel, message)
 
         day = 0
         suspect, victim = None, None
 
-        '''while False and (len(villagers) - len(mafia)) > len(mafia):
+        # change boolean
+        while False and (len(villagers) - len(mafia)) > len(mafia):
             message = 'Day {} begins.'.format(day)
             c.privmsg(self.channel, message)
 
-            # random turn order each day
+
 
             if day == 0:
                 for v in villagers:
@@ -163,8 +166,89 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                 for m in mafia:
                     # send message via whisper. "You are part of the mafia. Your ally is: " get other mafia
             else:
-                message = 'Today is Day {}.'.format(day) + 'Last night, {} was killed.'.format(victim) +
-                          'These players are still alive: {}'.format(', '.join(p.name for p in players))'''
+                players.remove(victim)
+                message = 'Today is Day {}.'.format(day) + 'Last night, {} was killed.'.format(victim) \
+                          + 'These players are still alive: {}'.format(', '.join(p.name for p in players))
+                c.privmsg(self.channel, message)
+
+            num_votes = 0
+            votes = []
+            if cmd == "vote" and day != 0:
+                num_votes += 1
+                #votes[p.name] += 1
+                #message = '{} has voted to kill {}'.format(p.name, )
+                # TO-DO: need to get user name and who to kill
+                c.privmsg(self.channel, message)
+
+            elif cmd == "abstain" and day != 0:
+                num_votes += 1
+                # message = '{} has voted to kill no one'.format(p.name)
+                # TO-DO: need to get user name
+                c.privmsg(self.channel, message)
+
+            max = 0
+            killed = None
+            for vote in votes:
+                if votes[vote] > max:
+                    max = votes[vote]
+                    killed = vote
+
+            # The most voted player is killed, ties broken randomly
+            if killed is not None:
+                message = 'The town has killed {}'.format(p.name) + 'They were {}.'.format(killed.get_role())
+                c.privmsg(self.channel, message)
+            else:
+                message = 'The town did not kill anyone today.'
+                c.privmsg(self.channel, message)
+
+            # Don't go to night if a win condition's been met.
+            if not mafia or (len(players) - len(mafia)) <= len(mafia):
+                break
+
+            # Day ends, night begins
+
+            # MAFIA NIGHT ACTION
+            # Mafia decides on a victim
+            for m in mafia:
+                # whisper who to kill, save it
+
+            message = 'The mafia decides to kill {}'.format(p.name)
+            c.privmsg(self.channel, message)
+
+            # END EDITS
+            day += 1
+
+        if mafia:
+            message = 'MAFIA VICTORY'
+
+        else:
+            message = 'VILLAGE VICTORY'
+        c.privmsg(self.channel, message)
+        self.prepare_next_game(c)
+
+    def prepare_next_game(self, c):
+        if not wait_queue:
+            self.game_exists = False
+            self.game_is_full = False
+            self.game_started = False
+            self.player_count = 0
+            self.players = []
+        else:
+            self.players = []
+            self.game_exists = True
+            for q in wait_queue:
+                self.player_count += 1
+                self.players.append(q)
+
+
+                if player_count == total_players:
+                    url = 'https://api.twitch.tv/kraken/channels/' + self.channel_id
+                    headers = {'Client-ID': self.client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
+                    r = requests.get(url, headers=headers).json()
+                    message = 'These players have been added to the game from wait queue {}'.format(', '.join(self.players))
+                    c.privmsg(self.channel, message)
+                    self.game_is_full = True
+                    self.start_gameplay(r, c)
 
 
 def main():
