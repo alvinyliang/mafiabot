@@ -27,8 +27,8 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         self.token = token
         self.channel = '#' + channel
 
-        self.players = {"Dale": 1, "Joe": 1, "Bob": 1, "Kat": 1, "Alvin": 1, "Leo": 1}
-        self.total_players = 8
+        self.players = {}
+        self.total_players = 2
 
         # Get the channel id, we will need this for v5 API calls
         url = 'https://api.twitch.tv/kraken/users?login=' + channel
@@ -92,7 +92,6 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             #add to players list
 
         sender = e.source.split("!")[0]
-        self.players[sender] = 1
 
         if not self.game_exists:
             self.players[sender] = 1
@@ -166,21 +165,17 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
         i = 0
         
-        print self.players
+        print self.players.keys()
 
         for key, value in self.players.iteritems():
-            if value == 0 or value == 1:
-                message = "/w " + sender + " you are mafia."
+            if value == 0:
+                message = "/w " + key + " you are mafia."
                 c.privmsg(self.channel, message)
 
             else:
-                message = "/w " + sender + " you are villager."
+                message = "/w " + key + " you are villager."
                 c.privmsg(self.channel, message)
             i += 1
-
-
-
-
 
         day = 0
         victim = None
