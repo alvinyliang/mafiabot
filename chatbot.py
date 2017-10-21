@@ -76,6 +76,15 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             r = requests.get(url, headers=headers).json()
 
             self.start_mafia(c, e)
+        elif cmd == "vote":
+            url = 'https://api.twitch.tv/kraken/channels/' + self.channel_id
+            headers = {'Client-ID': self.client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
+            r = requests.get(url, headers=headers).json() 
+        elif cmd == "status":
+            sender = e.source.split("!")[0]
+            c.privmsg(self.channel, "/w " + sender + str(self.players.keys()))
+        else:
+            c.privmsg(self.channel, "Did not understand command: " + cmd)
 
         # Poll the API the get the current status of the stream
         #elif cmd == "title":
@@ -85,11 +94,9 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         #    c.privmsg(self.channel, r['display_name'] + ' channel title is currently ' + r['status'])
 
         # The command was not recognized
-        else:
-            c.privmsg(self.channel, "Did not understand command: " + cmd)
 
     def start_mafia(self, c, e):
-            #add to players list
+        #add to players list
 
         sender = e.source.split("!")[0]
 
@@ -133,7 +140,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                 c.privmsg(self.channel, "Cannot add to game, already in game")
 
 
-    '''class Player(object):
+    class Player(object):
         role = 0
         messages = ''
         tokens = []
@@ -179,14 +186,17 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
         day = 0
         victim = None
-        """
+        
         while mafia_count > 0 and (villagers_count - mafia_count) > mafia_count:
-            #   message = 'Day {} begins.'.format(day)
-            #c.privmsg(self.channel, message)
+            message = 'Day {} begins.'.format(day)
+            c.privmsg(self.channel, message)
 
 
             if day > 0:
-                self.players.remove(victim)
+
+                del self.players[victim]
+
+
                 message = 'Today is Day {}.'.format(day) + 'Last night, {} was killed.'.format(victim) \
                           + 'These players are still alive: {}'.format(', '.join(self.players.keys()))
                 c.privmsg(self.channel, message)
@@ -232,15 +242,29 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
             # NIGHT ACTION
             # Mafia decides on a victim
+            mafia = []
+            mafia.append(self.players.get(0))
+            mafia.append(self.players.get(1))
+
+
             for m in mafia:
-                pass
+                for key, value in self.players.iteritems(){
+                    self.players[key] = (value, i)
+                    if m != None:
+                        c.privmsg(self.channel, "/w " + m + " " + str(name,  + " is the target")
+                    }
                 # whisper who to kill, save it
 
             #message = 'The mafia decides to kill {}'.format(p.name)
             # END TODO
             #c.privmsg(self.channel, message)
 
+
+
             day += 1
+
+
+
 
         if mafia_count > 0:
             message = 'MAFIA VICTORY'
@@ -250,7 +274,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
 
         #c.privmsg(self.channel, message)
-        self.prepare_next_game(c)
+       # self.prepare_next_game(c)
         """
 
     def prepare_next_game(self, c):
@@ -280,6 +304,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             else:
                 message = "Game created, waiting for enough players to join."
                 c.privmsg(self.channel, message)
+        """
 
 def main():
     if len(sys.argv) != 5:
