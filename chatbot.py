@@ -12,21 +12,23 @@ import sys
 import irc.bot
 import requests
 import random
+import Queue
 
 class TwitchBot(irc.bot.SingleServerIRCBot):
-    total_players = 8
     game_exists = False
     game_is_full = False
     game_started = False
     player_count = 0
-    players = []
-    wait_queue = Queue()
+    wait_queue = Queue.Queue()
 
 
     def __init__(self, username, client_id, token, channel):
         self.client_id = client_id
         self.token = token
         self.channel = '#' + channel
+
+        self.players = {"Dale": 1, "Joe": 1, "Bob": 1, "Kat": 1, "Alvin": 1, "Leo": 1}
+        self.total_players = 8
 
         # Get the channel id, we will need this for v5 API calls
         url = 'https://api.twitch.tv/kraken/users?login=' + channel
@@ -72,7 +74,8 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             url = 'https://api.twitch.tv/kraken/channels/' + self.channel_id
             headers = {'Client-ID': self.client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
             r = requests.get(url, headers=headers).json()
-            self.start_mafia(c)
+
+            self.start_mafia(c, e)
 
         # Poll the API the get the current status of the stream
         #elif cmd == "title":
@@ -85,30 +88,50 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         else:
             c.privmsg(self.channel, "Did not understand command: " + cmd)
 
-    def start_mafia(self, c):
+    def start_mafia(self, c, e):
+            #add to players list
+
+        sender = e.source.split("!")[0]
+        self.players[sender] = 1
+
         if not self.game_exists:
+            self.players[sender] = 1
             self.player_count = 1
             self.game_exists = True
+            
             # TODO: get user. self.players.append(username)
 
-            message = "Game created, waiting for enough players to join."
+            message = "Game created by " + sender + ", waiting for enough players to join. (" + str(self.player_count) + "/" + str(self.total_players) + ")"
+            
             c.privmsg(self.channel, message)
+
+
         elif self.game_is_full:
             # TODO: get user. self.wait_queue.put(username)
             message = "Current game is full. You are in the waiting queue for the next game."
             c.privmsg(self.channel, message)
         else:
-            self.player_count += 1
-            # TODO: get user. self.players.append(username)
 
-            # TODO: get user. message = username + ' has been added to the game lobby. '
-            c.privmsg(self.channel, message)
-            if self.player_count == self.total_players:
-                self.game_is_full = True
-                self.game_started = True
-                message = "There are enough players now, game starting!"
+            if str(sender) not in self.players:
+
+                self.player_count += 1
+                self.players[sender] = 1
+
+                # TODO: get user. self.players.append(username)
+                message = sender + ' has been added to the game. (' + str(self.player_count) + "/" + str(self.total_players) + ")"
+
+                # TODO: get user. message = username + ' has been added to the game lobby. '
                 c.privmsg(self.channel, message)
-                self.start_gameplay(c)
+
+                
+                if self.player_count == self.total_players:
+                    self.game_is_full = True
+                    self.game_started = True
+                    message = "There are enough players now, game starting!"
+                    c.privmsg(self.channel, message)
+                    self.start_gameplay(c, e)
+            else:
+                c.privmsg(self.channel, "Cannot add to game, already in game")
 
 
     '''class Player(object):
@@ -124,40 +147,53 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
                 return 'a mafioso'
             return 'a villager'''
 
-    def start_gameplay(self, c):
+    def start_gameplay(self, c, e):
+        print self.players
+
         nums = [x for x in range(8)]
         random.shuffle(nums)
+
         villagers_count = 6
         mafia_count = 2
-        all_players = {}
 
-        for i in range(len(nums)):
-            name = self.players[nums[i]]
-            if i == 0 or i == 1:
-                all_players[name][role] = 1
+
+        sender = e.source.split("!")[0]
+
+        i = 0
+        for key, value in self.players.iteritems():
+            self.players[key] = i
+            i += 1
+
+        i = 0
+        
+        print self.players
+
+        for key, value in self.players.iteritems():
+            if value == 0 or value == 1:
+                message = "/w " + sender + " you are mafia."
+                c.privmsg(self.channel, message)
+
             else:
-                all_players[name][role] = 0
+                message = "/w " + sender + " you are villager."
+                c.privmsg(self.channel, message)
+            i += 1
 
-        message = 'The players playing: {}'.format(', '.join(self.players))
-        c.privmsg(self.channel, message)
+
+
+
 
         day = 0
         victim = None
-
+        """
         while mafia_count > 0 and (villagers_count - mafia_count) > mafia_count:
-            message = 'Day {} begins.'.format(day)
-            c.privmsg(self.channel, message)
+            #   message = 'Day {} begins.'.format(day)
+            #c.privmsg(self.channel, message)
 
-            if day == 0:
-                for key in all_players:
-                    if all_players[key][role] == 0:
-                        # TODO: send message via whisper. message = "Today is Day 0. No voting will occur today. Beware of the mafia tonight"
-                    else:
-                        # TODO: send message via whisper. message = "You are part of the mafia. Your ally is: {}".format(other mafia)
-            else:
-                all_players.remove(victim)
+
+            if day > 0:
+                self.players.remove(victim)
                 message = 'Today is Day {}.'.format(day) + 'Last night, {} was killed.'.format(victim) \
-                          + 'These players are still alive: {}'.format(', '.join(all_players.keys()))
+                          + 'These players are still alive: {}'.format(', '.join(self.players.keys()))
                 c.privmsg(self.channel, message)
 
                 # Don't go to night if a win condition's been met.
@@ -202,11 +238,12 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             # NIGHT ACTION
             # Mafia decides on a victim
             for m in mafia:
+                pass
                 # whisper who to kill, save it
 
             #message = 'The mafia decides to kill {}'.format(p.name)
             # END TODO
-            c.privmsg(self.channel, message)
+            #c.privmsg(self.channel, message)
 
             day += 1
 
@@ -215,8 +252,11 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
         else:
             message = 'VILLAGE VICTORY'
-        c.privmsg(self.channel, message)
+
+
+        #c.privmsg(self.channel, message)
         self.prepare_next_game(c)
+        """
 
     def prepare_next_game(self, c):
         if wait_queue.empty():
